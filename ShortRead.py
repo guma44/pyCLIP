@@ -1,124 +1,137 @@
 import re
+from collections import defaultdict
+from HTSeq import GenomicInterval, GenomicFeature
 
-mut_mapping = {'MAC': 'MTG',
-               'MAT': 'MTA',
-               'MAG': 'MTC',
-               'MAN': 'MTN',
-               'MCA': 'MGT',
-               'MCT': 'MGA',
-               'MCG': 'MGC',
-               'MCN': 'MGN',
-               'MTA': 'MAT',
-               'MTC': 'MAG',
-               'MTG': 'MAC',
-               'MTN': 'MAN',
-               'MGA': 'MCT',
-               'MGC': 'MCG',
-               'MGT': 'MCA',
-               'MGN': 'MCN',
-               'MNA': 'MNT',
-               'MNC': 'MNG',
-               'MNT': 'MNA',
-               'MNG': 'MNC',
-               'DA': 'DT',
-               'DC': 'DG',
-               'DT': 'DA',
-               'DG': 'DC',
-               'DN': 'DN',
-               'IA': 'IT',
-               'IC': 'IG',
-               'IT': 'IA',
-               'IG': 'IC',
-               'IN': 'IN'}
+mutations_mapping = {'MAC': 'MTG',
+                     'MAT': 'MTA',
+                     'MAG': 'MTC',
+                     'MAN': 'MTN',
+                     'MCA': 'MGT',
+                     'MCT': 'MGA',
+                     'MCG': 'MGC',
+                     'MCN': 'MGN',
+                     'MTA': 'MAT',
+                     'MTC': 'MAG',
+                     'MTG': 'MAC',
+                     'MTN': 'MAN',
+                     'MGA': 'MCT',
+                     'MGC': 'MCG',
+                     'MGT': 'MCA',
+                     'MGN': 'MCN',
+                     'MNA': 'MNT',
+                     'MNC': 'MNG',
+                     'MNT': 'MNA',
+                     'MNG': 'MNC',
+                     'DA': 'DT',
+                     'DC': 'DG',
+                     'DT': 'DA',
+                     'DG': 'DC',
+                     'DN': 'DN',
+                     'IA': 'IT',
+                     'IC': 'IG',
+                     'IT': 'IA',
+                     'IG': 'IC',
+                     'IN': 'IN'}
+
+features_types = {'M': "mutation",
+                  'D': 'deletion',
+                  'I': 'insertion'}
 
 
-class ReadFeature:
+class IncorrectCigarException(Exception):
+    pass
 
-    """ Read Feature class"""
 
-    def __init__(self, name, beg, end, beg_in_read):
-        self.name = name
-        self.beg = beg
-        self.end = end
+class ReadFeature(GenomicFeature):
+    """Read Feature class"""
+
+    def __init__(self, name, type_, interval, beg_in_read):
+        super(ReadFeature, self).__init__(name=name, type_=type_, interval=interval)
         self.beg_in_read = beg_in_read
 
-    def __repr__(self):
-        return "%s:%i-%i" % (self.name, self.beg, self.end)
 
-
-class ShortRead:
-
+class ShortRead(GenomicInterval):
     """This class implements short read from CLIPz"""
 
-    def __init__(self, begining, end, chrom, strand, seq=None, clipz_cigar=None, features=None):
+    def __init__(self, chrom, start, end, strand, seq=None, clipz_cigar=None):
+        super(ShortRead, self).__init__(chrom=chrom, start=start, end=end, strand=strand)
+        if clipz_cigar:
+            self.clipz_cigar = CLIPzCigar(clipz_cigar, strand, start, chrom)
+            if self.clipz_cigar.length != self.length:
+                raise IncorrectCigarException("Cigar length does not match interval length: %i vs %i" % (self.clipz_cigar.length, self.length))
+        else:
+            self.clipz_cigar = clipz_cigar
         self.seq = seq
-        self.beg = begining  # 0-based
-        self.end = end  # 1-based
-        self.chrom = chrom
+
+    def get_truncation_position(self):
+        """Reeturn position of the truncation"""
+        return self.start_d
+
+
+class CLIPzCigar:
+
+    def __init__(self, cigar, strand, position, chrom=None):
+        self.cigar = cigar
         self.strand = strand
-        self.clipz_cigar = clipz_cigar
-        self.features = features or []
+        self.position = position
+        self.chrom = chrom
+        self.features = defaultdict(list)
+        self.cigar_list = self.parse_cigar()
+        self.length = self.get_length()
         self.parse_cigar_into_features()
 
-    def is_number(self, s):
-            try:
-                int(s)
-                return True
-            except ValueError:
-                return False
+    def parse_cigar(self):
+        """Split CLIPz cigar into list"""
+        return filter(None,
+                      re.split('([0-9]+|M[ACGTN]{2}|D[ACGTN]|I[ACGTN])',
+                               self.cigar))
 
-    def get_cigar_list(self):
-        return filter(None, re.split('([0-9]+|M[ACGTN]{2}|D[ACGTN]|I[ACGTN])', self.clipz_cigar))
+    def get_length(self):
+        length = 0
+        for feature in self.cigar_list:
+            if re.match("[MD]", feature):
+                length += 1
+            elif feature.startswith("I"):
+                pass
+            else:
+                length += int(feature)
+
+        return length
+
+    def is_string_integer(self, value):
+        """Return True if string can be converted to integer"""
+        try:
+            int(value)
+            return True
+        except ValueError:
+            return False
 
     def parse_cigar_into_features(self):
-        """Parse CLIPz cigar string into features of the read"""
-        cig_list = self.get_cigar_list()
+        """Parse CLIPz cigar string into dict of features of the read"""
         i = 0
         insertions = 0
-        for feat in cig_list:
-            if self.is_number(feat):
+        for feat in self.cigar_list:
+            if self.is_string_integer(feat):
                 i += int(feat)
             else:
                 if feat.startswith('I'):
                     insertions += 1
-                    #i += 1
-                    #continue
                 if self.strand == '+':
-                    self.features.append(ReadFeature(feat,
-                                                     i + self.beg - insertions,
-                                                     i + self.beg + 1 - insertions,
-                                                     i + insertions))
+                    self.features[feat].append(ReadFeature(feat,
+                                                           type_= features_types[feat[0]],
+                                                           interval = GenomicInterval(self.chrom,
+                                                                                      self.position + i - insertions,
+                                                                                      self.position + i + 1 - insertions,
+                                                                                      self.strand),
+                                                           beg_in_read = i + insertions))
                 elif self.strand == "-":
-                    self.features.append(ReadFeature(mut_mapping[feat],
-                                                     self.beg + i - insertions,
-                                                     self.beg + i + 1 - insertions,
-                                                     self.end - self.beg - i - 1 + insertions))
+                    self.features[mutations_mapping[feat]].append(ReadFeature(mutations_mapping[feat],
+                                                                              type_= features_types[feat[0]],
+                                                                              interval = GenomicInterval(self.chrom,
+                                                                                                         self.position + i - insertions,
+                                                                                                         self.position + i + 1 - insertions,
+                                                                                                         self.strand),
+                                                                              beg_in_read = self.length - i - 1 + insertions))
                 else:
                     raise Exception("Strand must be + or -")
                 i += 1
-        #proper_len_del = i - len([d for d in cig_list if 'D' in d])
-        proper_len_ins = i - len([d for d in cig_list if 'I' in d])
-        #if proper_len != len(self.seq):
-            #raise Exception('Cigar and sequence do not match: %s vs. %s' % (self.seq, self.clipz_cigar))
-        if proper_len_ins != self.end - self.beg:
-            print self.beg, self.end, self.end - self.beg
-            print i, proper_len_ins
-            print self.clipz_cigar, cig_list
-            raise Exception("Length of from coordinates do not match length from cigar!")
-
-    def make_feature_dict(self):
-        newdic = {}
-        for feat in self.features:
-            newdic[feat.beg_in_read] = feat.name
-        return newdic
-
-    def get_bed_string(self):
-        """Return a read string in bed format"""
-        pass
-
-    def get_truncation_pos(self):
-        """Reeturn position of the truncation"""
-        if self.strand == '+':
-            return self.beg
-        else:
-            return self.end - 1
