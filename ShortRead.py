@@ -53,7 +53,7 @@ class ReadFeature(GenomicFeature):
 class ShortRead(GenomicInterval):
     """This class implements short read from CLIPz"""
 
-    def __init__(self, chrom, start, end, strand, seq=None, clipz_cigar=None):
+    def __init__(self, chrom, start, end, strand, seq=None, clipz_cigar=None, name=None):
         super(ShortRead, self).__init__(chrom=chrom, start=start, end=end, strand=strand)
         if clipz_cigar:
             self.clipz_cigar = CLIPzCigar(clipz_cigar, strand, start, chrom)
@@ -62,10 +62,45 @@ class ShortRead(GenomicInterval):
         else:
             self.clipz_cigar = clipz_cigar
         self.seq = seq
+        self.name = name
 
     def get_truncation_position(self):
         """Reeturn position of the truncation"""
         return self.start_d
+
+    def get_end_position(self):
+        "Get end of the read in 0-based coordinates"
+        return self.end_d - 1
+
+    def get_bed_string(self):
+        bed_str = "%s\t%s\t%s\t%s\t%s\t%s\n" % (self.chrom,
+                                                self.start,
+                                                self.end,
+                                                str(self.name),
+                                                "1",
+                                                self.strand)
+        return bed_str
+
+    def get_truncation_bed_string(self):
+        """TODO: test this function"""
+        bed_str = "%s\t%s\t%s\t%s\t%s\t%s\n" % (self.chrom,
+                                                self.get_truncation_position(),
+                                                self.get_truncation_position() + 1,
+                                                str(self.name),
+                                                "1",
+                                                self.strand)
+        return bed_str
+
+    def get_gff_ensembl_string(self):
+        chrom = self.chrom
+        attr = 'gene_id "None"; gene_version "None"; gene_name "None"; gene_source "CLIPz"; gene_biotype "None";'
+        gff_str = "%s\tCLIPz\tshort_read\t%i\t%i\t.\t%s\t.\t%s\n" % (chrom[3:] if chrom.startswith("chr") else chrom,
+                                                               self.start + 1, # one based start
+                                                               self.end,
+                                                               self.strand,
+                                                               attr)
+        return gff_str
+
 
 
 class CLIPzCigar:
