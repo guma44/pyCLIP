@@ -1,5 +1,4 @@
 import sys
-sys.path.append('/import/bc2/home/zavolan/gumiennr/Scripts/CLIP')
 import ShortRead
 from Bio import SeqIO
 
