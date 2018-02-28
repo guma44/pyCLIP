@@ -54,7 +54,7 @@ class ShortRead(GenomicInterval):
     """This class implements short read from CLIPz"""
 
     def __init__(self, chrom, start, end, strand, seq=None, clipz_cigar=None, name=None):
-        super(ShortRead, self).__init__(chrom=chrom, start=start, end=end, strand=strand)
+        super(ShortRead, self).__init__(chrom=chrom, start=int(start), end=int(end), strand=strand)
         if clipz_cigar:
             self.clipz_cigar = CLIPzCigar(clipz_cigar, strand, start, chrom)
             if self.clipz_cigar.length != self.length:

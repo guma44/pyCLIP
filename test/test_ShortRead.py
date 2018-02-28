@@ -1,4 +1,10 @@
+import os
+import sys
 import unittest
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.join(script_dir, ".."))
+
 from ShortRead import ShortRead, IncorrectCigarException, CLIPzCigar
 
 class CLIPzCigarTest(unittest.TestCase):
